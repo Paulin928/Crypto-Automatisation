@@ -1,0 +1,25 @@
+chains:
+  ethereum:
+    enabled: true
+    rpc_url: "wss://sepolia.infura.io/ws/v3/VOTRE_CLE"
+    wallet_a: "0xVOTRE_ADRESSE_TESTNET"
+    wallets_b:
+      - "0xB1"
+      - "0xB2"
+      - "0xB3"
+      - "0xB4"
+      - "0xB5"
+
+distribution:
+  ratios: [0.48, 0.20, 0.15, 0.10, 0.07]
+
+retry:
+  initial_delay: 5
+  multiplier: 2
+  max_tries: 10
+
+database:
+  path: "data/distributor.db"
+
+security:
+  keystore_path: "data/keystore.enc"

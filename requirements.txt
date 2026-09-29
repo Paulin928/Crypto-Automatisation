@@ -1,0 +1,9 @@
+web3>=6.0
+bitcoinlib
+solana
+tronpy
+cryptography
+aiosqlite
+pyyaml
+python-dotenv
+coincurve-cp314-fix

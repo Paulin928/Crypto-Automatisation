@@ -1,0 +1,4 @@
+{
+  "name": "Python 3.12 Crypto Environment",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12"
+}

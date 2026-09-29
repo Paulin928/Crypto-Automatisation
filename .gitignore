@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MCAD - secrets et donnees locales
+.env
+data/
+*.db
+*.sqlite
+*.key
+*.pem
+wallets.json
+keystore.enc
