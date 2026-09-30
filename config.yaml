@@ -1,25 +1,26 @@
 chains:
   ethereum:
     enabled: true
-    rpc_url: "wss://sepolia.infura.io/ws/v3/VOTRE_CLE"
-    wallet_a: "0xVOTRE_ADRESSE_TESTNET"
+    rpc_url: wss://sepolia.infura.io/ws/v3/614797e7aedc4f768de49af1f2b855a9
+    wallet_a: '0xFfAf5811105D37fd8d960f213Ef2b0aa7785E52d'
     wallets_b:
-      - "0xB1"
-      - "0xB2"
-      - "0xB3"
-      - "0xB4"
-      - "0xB5"
-
+    - '0x4afB8D23899Bb1dA8E8ffA5e20F596D445882D09'
+    - '0xe2C1B3C087AadC549925A879A83915408D647396'
+    - '0x10efd2D87CE16EF67904BBfDe1D88bf69DDD2160'
+    - '0xe26253112046DbD351D0d76309d7aD7DD1FbF892'
+    - '0xaF254f813547783aEe3e655c06a3Ba1f1c3aa6F8'
 distribution:
-  ratios: [0.48, 0.20, 0.15, 0.10, 0.07]
-
+  ratios:
+  - 0.48
+  - 0.2
+  - 0.15
+  - 0.1
+  - 0.07
 retry:
   initial_delay: 5
   multiplier: 2
-  max_tries: 10
-
+  max_tries: 5
 database:
-  path: "data/distributor.db"
-
+  path: data/distributor.db
 security:
-  keystore_path: "data/keystore.enc"
+  keystore_path: data/keystore.enc
