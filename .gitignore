@@ -226,3 +226,21 @@ data/
 *.pem
 wallets.json
 keystore.enc
+
+# MCAD - secrets et donnees locales
+.env
+.env.local
+data/
+*.db
+*.sqlite
+*.key
+*.pem
+wallets.json
+wallets_sol.json
+keystore.enc
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+.ruff_cache/
