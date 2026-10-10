@@ -10,20 +10,24 @@ chains:
     - '0xef4A5be58bDDD600B9bC2fd099589c59B7Db377c'
   bitcoin:
     enabled: true
-    network: testnet
+    network: regtest
     api_base: https://blockstream.info/testnet/api
-    wallet_a_address: n3B1LjwFgo75dQMB7y8DX3wtqfJwveTxFx
+    wallet_a_address: bcrt1qlxtv7ntttzhrxfu5xaqcz47l3y649q88tawmwg
     wallet_a_wif_env: BTC_WALLET_A_WIF
     wallets_b:
-    - n3pHEy6LZUsfiCUsb4MWQZKbuRHX5eZWcc
-    - miVBVJMTcoDwaG42DhniqZQmZStJRxRh5D
-    - mzzJFSmvBgMzchpihF9DE821fTQJEUGFk6
-    - n3Zit2ooEnGga4iPC5XRX6m77X6c1bpnUw
-    - n22Jfe2DhnSddA4tMYesSBsmjT2pvRguRi
+    - bcrt1q59q54dr65mruu3m7xa5ysg84ec39rkk9t2axt6
+    - bcrt1qjp8du9cr6h36rrgg3re2smfhqwydgr592karcl
+    - bcrt1qc3at0xhrvcq29ltul23pz9qq4z2y62pu0rdyml
+    - bcrt1qthnvyrqleswt2wxlsjrdqujxp0tkph298qusku
+    - bcrt1qgkzag5f97wsaxeyrxl8pkj6nscdj2ze6h8lyrw
     fee_rate_sat_vb: 2
     min_satoshis_to_distribute: 10000
     confirmations_required: 1
     dust_limit: 546
+    rpc_url: http://127.0.0.1:18443
+    rpc_user: btc
+    rpc_password: btcpass
+    rpc_wallet: walletA
 distribution:
   ratios:
   - 0.48

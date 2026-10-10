@@ -15,7 +15,9 @@ from engine.signer import EVMSigner
 from storage.repository import JobRepository
 from watchers.evm import EVMWatcher
 from watchers.btc import BtcWatcher
+from watchers.btc_cli import BtcWatcherCli
 from engine.btc_signer import BtcSigner
+from engine.btc_signer_cli import BtcSignerCli
 from engine.btc_distributor import BtcDistributor
 
 
@@ -82,36 +84,72 @@ async def main():
         btc_tasks = []
         btc_watcher = None
         if btc_cfg and btc_cfg.get("enabled"):
-            btc_wif = os.getenv(btc_cfg["wallet_a_wif_env"])
-            if not btc_wif:
-                raise RuntimeError(
-                    f"Variable d'env {btc_cfg['wallet_a_wif_env']} manquante"
+            btc_network = btc_cfg["network"]
+            btc_watcher_addr = btc_cfg["wallet_a_address"]
+
+            if btc_network == "regtest":
+                # --- Mode regtest : via Bitcoin Core CLI ---
+                btc_signer = BtcSignerCli(
+                    rpc_url=btc_cfg.get("rpc_url", "http://127.0.0.1:18443"),
+                    rpc_user=btc_cfg.get("rpc_user", "btc"),
+                    rpc_password=btc_cfg.get("rpc_password", "btcpass"),
+                    wallet_name=btc_cfg.get("rpc_wallet", "faucet"),
+                    fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
+                )
+                print(f"[MCAD] Signer BTC (CLI) : {btc_signer.wallet_name}")
+
+                btc_distributor = BtcDistributor(
+                    signer=btc_signer,
+                    wallets_b=btc_cfg["wallets_b"],
+                    ratios_4_first=config["distribution"]["ratios"][:4],
+                    fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
+                    min_satoshis=btc_cfg["min_satoshis_to_distribute"],
+                    dust_limit=btc_cfg["dust_limit"],
+                    dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
                 )
 
-            btc_signer = BtcSigner(
-                btc_wif,
-                network=btc_cfg["network"],
-                fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
-            )
-            print(f"[MCAD] Signer BTC   : {btc_signer.address}")
+                btc_watcher = BtcWatcherCli(
+                    watched_address=btc_watcher_addr,
+                    on_incoming=btc_distributor.handle_incoming,
+                    rpc_url=btc_cfg.get("rpc_url", "http://127.0.0.1:18443"),
+                    rpc_user=btc_cfg.get("rpc_user", "btc"),
+                    rpc_password=btc_cfg.get("rpc_password", "btcpass"),
+                    wallet_name=btc_cfg.get("rpc_wallet", "faucet"),
+                    poll_interval=3,
+                    confirmations_required=btc_cfg["confirmations_required"],
+                )
+            else:
+                # --- Mode testnet / mainnet : via bitcoinlib + WIF ---
+                btc_wif = os.getenv(btc_cfg["wallet_a_wif_env"])
+                if not btc_wif:
+                    raise RuntimeError(
+                        f"Variable d'env {btc_cfg['wallet_a_wif_env']} manquante"
+                    )
 
-            btc_distributor = BtcDistributor(
-                signer=btc_signer,
-                wallets_b=btc_cfg["wallets_b"],
-                ratios_4_first=config["distribution"]["ratios"][:4],
-                fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
-                min_satoshis=btc_cfg["min_satoshis_to_distribute"],
-                dust_limit=btc_cfg["dust_limit"],
-                dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
-            )
+                btc_signer = BtcSigner(
+                    btc_wif,
+                    network=btc_network,
+                    fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
+                )
+                print(f"[MCAD] Signer BTC (lib) : {btc_signer.address}")
 
-            btc_watcher = BtcWatcher(
-                api_base=btc_cfg["api_base"],
-                watched_address=btc_cfg["wallet_a_address"],
-                on_incoming=btc_distributor.handle_incoming,
-                poll_interval=10,
-                confirmations_required=btc_cfg["confirmations_required"],
-            )
+                btc_distributor = BtcDistributor(
+                    signer=btc_signer,
+                    wallets_b=btc_cfg["wallets_b"],
+                    ratios_4_first=config["distribution"]["ratios"][:4],
+                    fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
+                    min_satoshis=btc_cfg["min_satoshis_to_distribute"],
+                    dust_limit=btc_cfg["dust_limit"],
+                    dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
+                )
+
+                btc_watcher = BtcWatcher(
+                    api_base=btc_cfg["api_base"],
+                    watched_address=btc_watcher_addr,
+                    on_incoming=btc_distributor.handle_incoming,
+                    poll_interval=10,
+                    confirmations_required=btc_cfg["confirmations_required"],
+                )
 
             btc_tasks.append(asyncio.create_task(btc_distributor.run_worker()))
             btc_tasks.append(asyncio.create_task(btc_watcher.start()))
