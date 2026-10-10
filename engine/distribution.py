@@ -30,7 +30,12 @@ class DistributionEngine:
         await self._stop.wait()
 
     async def handle_incoming(self, montant_recu: Decimal, tx_hash: str):
-        """Point d'entree quand une tx entrante est detectee."""
+        """Point d'entree quand une tx entrante est detectee.
+
+        Logique 4+1 :
+        - B1..B4 recoivent un pourcentage FIXE du montant recu.
+        - B5 recoit : montant_recu - somme(B1..B4) - 5 * gas_unitaire.
+        """
         async with self.lock:
             print(f"\n[{self.chain_name}] === Distribution de {montant_recu} ETH ===")
 
@@ -41,36 +46,58 @@ class DistributionEngine:
             )
             print(f"[{self.chain_name}] Job #{job_id} cree")
 
-            reste = montant_recu
-            for i, ratio in enumerate(self.ratios, start=1):
-                if i > len(self.wallets_b):
-                    print(f"[{self.chain_name}] Pas de wallet B{i}, on s'arrete")
-                    break
+            if len(self.wallets_b) != 5:
+                print(f"[{self.chain_name}] Il faut 5 wallets B (recu {len(self.wallets_b)}), abandon")
+                await self.repo.complete_job(job_id, montant_recu)
+                return
 
-                montant = (reste * ratio).quantize(PRECISION)
-                gas = await self._estimate_gas()
-                # Garde-fou : on doit avoir assez pour envoyer + payer le gas
-                if reste - montant - gas < 0:
-                    montant = max(reste - gas, Decimal("0"))
-                    if montant <= 0:
-                        print(f"[{self.chain_name}] Etape {i} : plus assez de fonds, skip")
-                        await self.repo.mark_step(job_id, i, "SKIPPED", Decimal("0"), reste)
-                        continue
+            if len(self.ratios) != 4:
+                print(f"[{self.chain_name}] Il faut 4 ratios (recu {len(self.ratios)}), abandon")
+                await self.repo.complete_job(job_id, montant_recu)
+                return
 
-                print(f"[{self.chain_name}] Etape {i} : envoi {montant} ETH "
-                      f"vers {self.wallets_b[i-1][:10]}... (gas ~{gas})")
+            # 1) Gas unitaire + gas total (5 envois)
+            gas_unit = await self._estimate_gas()
+            total_fees = gas_unit * 5
 
-                ok = await self._retry_expo(i, montant)
+            # 2) Montants B1..B4 = ratio * montant_recu
+            allocations = []
+            total_fixed = Decimal("0")
+            for ratio, dest in zip(self.ratios, self.wallets_b[:4]):
+                amt = (montant_recu * ratio).quantize(PRECISION)
+                allocations.append((dest, amt))
+                total_fixed += amt
+
+            # 3) Montant B5 = reste - frais
+            reste_b5 = (montant_recu - total_fixed - total_fees).quantize(PRECISION)
+
+            # Seuil de dust ETH : on exige au moins gas_unit pour pouvoir envoyer
+            if reste_b5 < gas_unit:
+                print(f"[{self.chain_name}] B5 = {reste_b5} ETH < gas_unit {gas_unit} -> distribution annulee")
+                await self.repo.complete_job(job_id, montant_recu)
+                return
+
+            allocations.append((self.wallets_b[4], reste_b5))
+
+            # 4) Recap
+            print(f"[{self.chain_name}] Gas unitaire ~{gas_unit} ETH, total (x5) = {total_fees} ETH")
+            for i, (dest, amt) in enumerate(allocations, start=1):
+                pct = (amt / montant_recu * 100).quantize(Decimal("0.01"))
+                print(f"[{self.chain_name}]   B{i} -> {dest[:10]}... : {amt} ETH ({pct}%)")
+
+            # 5) Envois sequentiels B1..B4 puis B5
+            for i, (dest, amt) in enumerate(allocations, start=1):
+                print(f"[{self.chain_name}] Etape {i} : envoi {amt} ETH vers {dest[:10]}...")
+                ok = await self._retry_expo(i, amt)
                 if ok:
-                    reste = reste - montant - gas
-                    await self.repo.mark_step(job_id, i, "OK", montant, reste)
-                    print(f"[{self.chain_name}] Etape {i} OK, reste = {reste}")
+                    await self.repo.mark_step(job_id, i, "OK", amt, montant_recu)
+                    print(f"[{self.chain_name}] Etape {i} OK")
                 else:
-                    await self.repo.mark_step(job_id, i, "FAILED", montant, reste)
+                    await self.repo.mark_step(job_id, i, "FAILED", amt, montant_recu)
                     print(f"[{self.chain_name}] Etape {i} FAILED apres retries")
 
-            await self.repo.complete_job(job_id, reste)
-            print(f"[{self.chain_name}] === Termine. Reste final : {reste} ETH ===\n")
+            await self.repo.complete_job(job_id, Decimal("0"))
+            print(f"[{self.chain_name}] === Termine ===\n")
 
     async def _estimate_gas(self) -> Decimal:
         """Estime le cout d'une tx en ETH."""

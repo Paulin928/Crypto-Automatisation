@@ -1,21 +1,36 @@
 chains:
   ethereum:
     enabled: true
-    rpc_url: wss://sepolia.infura.io/ws/v3/614797e7aedc4f768de49af1f2b855a9
-    wallet_a: '0xFfAf5811105D37fd8d960f213Ef2b0aa7785E52d'
+    wallet_a: '0xcF543059382d1cBdB0Bf162E6Cd3a1e22e1ad8F0'
     wallets_b:
-    - '0x4afB8D23899Bb1dA8E8ffA5e20F596D445882D09'
-    - '0xe2C1B3C087AadC549925A879A83915408D647396'
-    - '0x10efd2D87CE16EF67904BBfDe1D88bf69DDD2160'
-    - '0xe26253112046DbD351D0d76309d7aD7DD1FbF892'
-    - '0xaF254f813547783aEe3e655c06a3Ba1f1c3aa6F8'
+    - '0x288d7A65B08AAF722DB62E9297dA8280A8A47A6F'
+    - '0x2725e86df584438b6d4d6ce75CB55A19559c64B5'
+    - '0xeC2168a7e1D81fA14f44F02d10f5f9eC103F98B0'
+    - '0xcB9715CfdCc847b91f3b9c8ec303FA39317143f7'
+    - '0xef4A5be58bDDD600B9bC2fd099589c59B7Db377c'
+  bitcoin:
+    enabled: true
+    network: testnet
+    api_base: https://blockstream.info/testnet/api
+    wallet_a_address: n3B1LjwFgo75dQMB7y8DX3wtqfJwveTxFx
+    wallet_a_wif_env: BTC_WALLET_A_WIF
+    wallets_b:
+    - n3pHEy6LZUsfiCUsb4MWQZKbuRHX5eZWcc
+    - miVBVJMTcoDwaG42DhniqZQmZStJRxRh5D
+    - mzzJFSmvBgMzchpihF9DE821fTQJEUGFk6
+    - n3Zit2ooEnGga4iPC5XRX6m77X6c1bpnUw
+    - n22Jfe2DhnSddA4tMYesSBsmjT2pvRguRi
+    fee_rate_sat_vb: 2
+    min_satoshis_to_distribute: 10000
+    confirmations_required: 1
+    dust_limit: 546
 distribution:
   ratios:
   - 0.48
   - 0.2
   - 0.15
   - 0.1
-  - 0.07
+  final_wallet_absorbs_fees: true
 retry:
   initial_delay: 5
   multiplier: 2
