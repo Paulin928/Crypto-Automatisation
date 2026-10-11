@@ -28,6 +28,21 @@ chains:
     rpc_user: btc
     rpc_password: btcpass
     rpc_wallet: walletA
+  solana:
+    enabled: true
+    network: devnet
+    rpc_ws_url: wss://api.devnet.solana.com
+    rpc_http_url: https://api.devnet.solana.com
+    wallet_a_address: B7eH6M39cVp48FwD3NdgJbqWcKz9M23ddsCnZ4rwhMGR
+    wallets_b:
+    - 9qRcqMKRLhwfy7Yb3771DMMJ3vNynCLex8AaPoRYGMLy
+    - FBceZnXmWqDdMkmfbxiE8j6MqrahrW1TjkELxqDbX23W
+    - 5JuPf9rzuCpUyPSs1VbEQNWY4AHGC7L6LJFSGij657mv
+    - 6ZLkaZuak3vc2wnTqjM5MQ1CirC5P45tnns4tDzpn5VN
+    - HDE52KwzM187o9oSUCcJvw1X6cwhPVHZQtR3iorkzey8
+    fee_lamports_per_tx: 5000
+    min_lamports_to_distribute: 1000000
+    dust_limit_lamports: 5000
 distribution:
   ratios:
   - 0.48

@@ -19,6 +19,9 @@ from watchers.btc_cli import BtcWatcherCli
 from engine.btc_signer import BtcSigner
 from engine.btc_signer_cli import BtcSignerCli
 from engine.btc_distributor import BtcDistributor
+from watchers.sol import SolWatcher
+from engine.sol_signer import SolSigner
+from engine.sol_distributor import SolDistributor
 
 
 async def main():
@@ -156,6 +159,45 @@ async def main():
             print(f"[MCAD] Surveillance BTC active sur {btc_cfg['wallet_a_address']}")
             print(f"[MCAD] DRY_RUN BTC : {os.getenv('DRY_RUN', 'true')}")
 
+        # ============ SOLANA ============
+        sol_cfg = config["chains"].get("solana")
+        sol_tasks = []
+        sol_watcher = None
+        if sol_cfg and sol_cfg.get("enabled"):
+            import json as _json
+            with open("data/wallets_sol.json") as _f:
+                _sol_wallets = _json.load(_f)
+            _sol_pk = _sol_wallets[0].get("private_key_b58") or _sol_wallets[0].get("private_key")
+
+            sol_signer = SolSigner(
+                private_key_str=_sol_pk,
+                rpc_http_url=sol_cfg["rpc_http_url"],
+                fee_lamports_per_tx=sol_cfg["fee_lamports_per_tx"],
+            )
+            print(f"[MCAD] Signer SOL : {sol_signer.address}")
+
+            sol_distributor = SolDistributor(
+                signer=sol_signer,
+                wallets_b=sol_cfg["wallets_b"],
+                ratios_4_first=config["distribution"]["ratios"][:4],
+                fee_lamports_per_tx=sol_cfg["fee_lamports_per_tx"],
+                min_lamports=sol_cfg["min_lamports_to_distribute"],
+                dust_limit_lamports=sol_cfg["dust_limit_lamports"],
+                dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
+            )
+
+            sol_watcher = SolWatcher(
+                rpc_ws_url=sol_cfg["rpc_ws_url"],
+                rpc_http_url=sol_cfg["rpc_http_url"],
+                watched_address=sol_cfg["wallet_a_address"],
+                on_incoming_cb=sol_distributor.handle_incoming,
+            )
+
+            sol_tasks.append(asyncio.create_task(sol_distributor.run_worker()))
+            sol_tasks.append(asyncio.create_task(sol_watcher.start()))
+            print(f"[MCAD] Surveillance SOL active sur {sol_cfg['wallet_a_address']}")
+            print(f"[MCAD] DRY_RUN SOL : {os.getenv('DRY_RUN', 'true')}")
+
         print(f"[MCAD] Surveillance active sur {wallet_a}")
         print(f"[MCAD] En attente de transactions entrantes...\n")
 
@@ -167,10 +209,12 @@ async def main():
             await watcher.stop()
             if btc_watcher is not None:
                 await btc_watcher.stop()
-            for t in btc_tasks:
+            if sol_watcher is not None:
+                await sol_watcher.stop()
+            for t in btc_tasks + sol_tasks:
                 t.cancel()
-            if btc_tasks:
-                await asyncio.gather(*btc_tasks, return_exceptions=True)
+            if btc_tasks or sol_tasks:
+                await asyncio.gather(*(btc_tasks + sol_tasks), return_exceptions=True)
 
 
 if __name__ == "__main__":
