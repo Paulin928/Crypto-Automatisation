@@ -14,9 +14,18 @@ from watchers.base import ChainWatcher
 class EVMWatcher(ChainWatcher):
     """Surveille une adresse Ethereum via WebSocket (nouveaux blocs)."""
 
-    def __init__(self, rpc_url: str, watched_address: str, on_incoming_cb):
+    def __init__(
+        self,
+        rpc_url: str,
+        watched_address: str,
+        on_incoming_cb,
+        repo=None,
+        start_block_lookback: int = 100,
+    ):
         super().__init__("ethereum", rpc_url, watched_address)
         self.on_incoming_cb = on_incoming_cb
+        self.repo = repo
+        self.start_block_lookback = start_block_lookback
         self._running = False
         self._seen_tx_hashes = set()
         self._last_block = 0
@@ -31,9 +40,15 @@ class EVMWatcher(ChainWatcher):
                 async with AsyncWeb3(WebSocketProvider(self.rpc_url)) as w3:
                     print(f"[EVMWatcher] Connecte. Surveillance de {self.watched_address}")
 
-                    # Reprendre a partir du bloc actuel
-                    self._last_block = await w3.eth.block_number
-                    print(f"[EVMWatcher] Bloc de depart : {self._last_block}")
+                    # Recuperer le bloc actuel
+                    current_block = await w3.eth.block_number
+                    print(f"[EVMWatcher] Bloc actuel : {current_block}")
+
+                    # Catch-up : scanner les N derniers blocs
+                    await self._sync_history(w3, current_block)
+
+                    # Puis surveiller les nouveaux blocs
+                    self._last_block = current_block
                     retry_delay = 5
 
                     # Boucle principale : verifier chaque nouveau bloc
@@ -60,6 +75,60 @@ class EVMWatcher(ChainWatcher):
     async def stop(self):
         self._running = False
 
+    async def _sync_history(self, w3, current_block: int):
+        """Rattrape les TX recentes des N derniers blocs."""
+        from_block = max(0, current_block - self.start_block_lookback)
+        print(f"[EVMWatcher] Catch-up : blocs {from_block} -> {current_block} ({self.start_block_lookback} blocs)")
+
+        deja_traitees = 0
+        a_traiter = 0
+
+        for n in range(from_block, current_block + 1):
+            try:
+                block = await w3.eth.get_block(n, full_transactions=True)
+            except Exception as e:
+                print(f"[EVMWatcher] Erreur get_block({n}) : {e}")
+                continue
+
+            for tx in block.transactions:
+                tx_hash = tx["hash"].hex() if hasattr(tx["hash"], "hex") else str(tx["hash"])
+                if tx_hash in self._seen_tx_hashes:
+                    continue
+
+                to_addr = tx.get("to")
+                if to_addr is None:
+                    continue
+                if to_addr.lower() != self.watched_address.lower():
+                    continue
+                if tx.get("value", 0) == 0:
+                    continue
+
+                # Verifier la DB
+                already = False
+                if self.repo is not None:
+                    try:
+                        already = await self.repo.is_tx_processed("ethereum", tx_hash)
+                    except Exception:
+                        pass
+
+                if already:
+                    self._seen_tx_hashes.add(tx_hash)
+                    deja_traitees += 1
+                    continue
+
+                # Nouvelle TX a traiter
+                a_traiter += 1
+                self._seen_tx_hashes.add(tx_hash)
+                montant_eth = Decimal(w3.from_wei(tx["value"], "ether"))
+                print(f"[EVMWatcher] Catch-up TX : {montant_eth} ETH (tx={tx_hash[:20]}..., bloc={n})")
+
+                try:
+                    await self.on_incoming_cb(montant_eth, tx_hash)
+                except Exception as e:
+                    print(f"[EVMWatcher] Erreur callback : {e}")
+
+        print(f"[EVMWatcher] Catch-up termine : {deja_traitees} deja traitees, {a_traiter} nouvelles")
+
     async def _scan_block(self, w3: AsyncWeb3, block_number: int):
         """Inspecte toutes les tx d'un bloc et notifie les receptions."""
         try:
@@ -81,6 +150,15 @@ class EVMWatcher(ChainWatcher):
                 continue
             if tx.get("value", 0) == 0:
                 continue
+
+            # Double check DB
+            if self.repo is not None:
+                try:
+                    if await self.repo.is_tx_processed("ethereum", tx_hash):
+                        self._seen_tx_hashes.add(tx_hash)
+                        continue
+                except Exception as e:
+                    print(f"[EVMWatcher] Erreur check DB : {e}")
 
             montant_eth = Decimal(w3.from_wei(tx["value"], "ether"))
             print(f"\n[EVMWatcher] RECEPTION detectee : {montant_eth} ETH")

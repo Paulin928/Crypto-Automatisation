@@ -65,6 +65,7 @@ async def main():
                 repo=repo,
                 signer=signer,
                 gas_estimator=gas_estimator,
+                dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
             )
             engines[chain_name] = engine
 
@@ -80,7 +81,7 @@ async def main():
             print(f"\n[MCAD] Reception detectee : {montant} ETH (tx={tx_hash[:16]}...)")
             await eth_engine.handle_incoming(montant, tx_hash)
 
-        watcher = EVMWatcher(ws_url, wallet_a, on_incoming)
+        watcher = EVMWatcher(ws_url, wallet_a, on_incoming, repo=repo)
 
         # ============ BITCOIN ============
         btc_cfg = config["chains"].get("bitcoin")
@@ -109,6 +110,7 @@ async def main():
                     min_satoshis=btc_cfg["min_satoshis_to_distribute"],
                     dust_limit=btc_cfg["dust_limit"],
                     dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
+                    repo=repo,
                 )
 
                 btc_watcher = BtcWatcherCli(
@@ -133,6 +135,7 @@ async def main():
                     btc_wif,
                     network=btc_network,
                     fee_rate_sat_vb=btc_cfg["fee_rate_sat_vb"],
+                    witness_type=btc_cfg.get("witness_type", "segwit"),
                 )
                 print(f"[MCAD] Signer BTC (lib) : {btc_signer.address}")
 
@@ -144,6 +147,7 @@ async def main():
                     min_satoshis=btc_cfg["min_satoshis_to_distribute"],
                     dust_limit=btc_cfg["dust_limit"],
                     dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
+                    repo=repo,
                 )
 
                 btc_watcher = BtcWatcher(
@@ -152,6 +156,7 @@ async def main():
                     on_incoming=btc_distributor.handle_incoming,
                     poll_interval=10,
                     confirmations_required=btc_cfg["confirmations_required"],
+                    repo=repo,
                 )
 
             btc_tasks.append(asyncio.create_task(btc_distributor.run_worker()))
@@ -184,6 +189,7 @@ async def main():
                 min_lamports=sol_cfg["min_lamports_to_distribute"],
                 dust_limit_lamports=sol_cfg["dust_limit_lamports"],
                 dry_run=os.getenv("DRY_RUN", "true").lower() == "true",
+                repo=repo,
             )
 
             sol_watcher = SolWatcher(
@@ -191,6 +197,7 @@ async def main():
                 rpc_http_url=sol_cfg["rpc_http_url"],
                 watched_address=sol_cfg["wallet_a_address"],
                 on_incoming_cb=sol_distributor.handle_incoming,
+                repo=repo,
             )
 
             sol_tasks.append(asyncio.create_task(sol_distributor.run_worker()))

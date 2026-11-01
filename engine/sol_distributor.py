@@ -29,6 +29,7 @@ class SolDistributor:
         min_lamports: int = 1_000_000,
         dust_limit_lamports: int = 5000,
         dry_run: bool = True,
+        repo=None,
     ):
         if len(wallets_b) != 5:
             raise ValueError("Il faut exactement 5 wallets B")
@@ -47,6 +48,7 @@ class SolDistributor:
         self.min_lamports = min_lamports
         self.dust_limit_lamports = dust_limit_lamports
         self.dry_run = dry_run
+        self.repo = repo
 
         self._lock = asyncio.Lock()
         self._queue: asyncio.Queue[tuple[Decimal, str]] = asyncio.Queue()
@@ -72,6 +74,28 @@ class SolDistributor:
                 self._queue.task_done()
 
     async def _process_one(self, montant_sol: Decimal, tx_hash: str):
+        # Verifier si deja traitee en DB
+        if self.repo is not None:
+            try:
+                if await self.repo.is_tx_processed("solana", tx_hash):
+                    print(f"[SOL-DIST] TX deja traitee en DB : {tx_hash[:20]}... — skip")
+                    return
+            except Exception as e:
+                print(f"[SOL-DIST] Erreur check DB : {e}")
+
+        # Creer le job en DB
+        job_id = None
+        if self.repo is not None:
+            try:
+                job_id = await self.repo.create_job(
+                    chain="solana",
+                    tx_hash=tx_hash,
+                    montant_initial=montant_sol,
+                )
+                print(f"[SOL-DIST] Job #{job_id} cree en DB")
+            except Exception as e:
+                print(f"[SOL-DIST] Erreur create_job : {e}")
+
         recu_lamports = int(montant_sol * LAMPORTS_PER_SOL)
 
         if recu_lamports < self.min_lamports:
@@ -115,13 +139,21 @@ class SolDistributor:
 
         if self.dry_run:
             print("[SOL-DIST] DRY_RUN actif — aucun envoi reel")
+            if self.repo is not None and job_id is not None:
+                try:
+                    await self.repo.complete_job(job_id, Decimal("0"))
+                except Exception as e:
+                    print(f"[SOL-DIST] Erreur complete_job : {e}")
             return
 
-        # 5) Envois sequentiels B1..B4 puis B5
+        # 5) Envois sequentiels B1..B4 puis B5 (avec delai anti rate-limit)
         for i, (addr, amt) in enumerate(allocations, start=1):
             try:
                 sig = await self.signer.send_native(addr, amt)
                 print(f"[SOL-DIST]   B{i} envoye : sig={sig[:20]}...")
+                # Delai entre envois (Helius Free = 1 tx/sec)
+                if i < len(allocations):
+                    await asyncio.sleep(2)
             except Exception as e:
                 print(f"[SOL-DIST]   B{i} ECHEC : {e!r}")
                 raise

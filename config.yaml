@@ -1,45 +1,45 @@
 chains:
   ethereum:
     enabled: true
-    wallet_a: '0xcF543059382d1cBdB0Bf162E6Cd3a1e22e1ad8F0'
+    wallet_a: '0xc5dA0C331e348B6b27b0085Acf4Ec78f7Dc8bf60'
     wallets_b:
-    - '0x288d7A65B08AAF722DB62E9297dA8280A8A47A6F'
-    - '0x2725e86df584438b6d4d6ce75CB55A19559c64B5'
-    - '0xeC2168a7e1D81fA14f44F02d10f5f9eC103F98B0'
-    - '0xcB9715CfdCc847b91f3b9c8ec303FA39317143f7'
-    - '0xef4A5be58bDDD600B9bC2fd099589c59B7Db377c'
+    - '0xbc384bBC55c849A9537B9741c478A95937a91747'
+    - '0x446479b7dF8AE1004CCB351fc12c924093B75086'
+    - '0x81a075f8C7B36DEcc5E82a2f3043d286FE41F340'
+    - '0xDf2b9aA03CE5a7EAb7733F3c6F17B1E495B10F3f'
+    - '0xD904FCdC3D10501F6061F35fB036A8613b28B1b3'
+    network: mainnet
+    rpc_url: wss://mainnet.infura.io/ws/v3/eth_rpc_url
+    min_eth_to_distribute: 0.005
   bitcoin:
     enabled: true
-    network: regtest
-    api_base: https://blockstream.info/testnet/api
-    wallet_a_address: bcrt1qlxtv7ntttzhrxfu5xaqcz47l3y649q88tawmwg
+    network: mainnet
+    api_base: https://blockstream.info/api
+    wallet_a_address: bc1qxu2lwwt0l3wdjl73u0r9fpps3qw4yd2c4c6y0a
     wallet_a_wif_env: BTC_WALLET_A_WIF
     wallets_b:
-    - bcrt1q59q54dr65mruu3m7xa5ysg84ec39rkk9t2axt6
-    - bcrt1qjp8du9cr6h36rrgg3re2smfhqwydgr592karcl
-    - bcrt1qc3at0xhrvcq29ltul23pz9qq4z2y62pu0rdyml
-    - bcrt1qthnvyrqleswt2wxlsjrdqujxp0tkph298qusku
-    - bcrt1qgkzag5f97wsaxeyrxl8pkj6nscdj2ze6h8lyrw
+    - bc1qrwsydvzcacfzh4myp85ay5r7fry2lm7dufcyd3
+    - bc1qcgewq20pez3zaqw6caaca73t2h25tez6e7ntq7
+    - bc1qxv0qe7eef22jlz2ek3nktdqhk5pchylap2r8x9
+    - bc1qwm4l76x9c049a8tq769dle4jn49y74k9zsh3rx
+    - bc1qexpu6kem44n7j6c7vka0l5ththgm86sf0dg4uv
     fee_rate_sat_vb: 2
     min_satoshis_to_distribute: 10000
     confirmations_required: 1
     dust_limit: 546
-    rpc_url: http://127.0.0.1:18443
-    rpc_user: btc
-    rpc_password: btcpass
-    rpc_wallet: walletA
+    witness_type: segwit
   solana:
     enabled: true
-    network: devnet
-    rpc_ws_url: wss://api.devnet.solana.com
-    rpc_http_url: https://api.devnet.solana.com
-    wallet_a_address: B7eH6M39cVp48FwD3NdgJbqWcKz9M23ddsCnZ4rwhMGR
+    network: mainnet
+    rpc_ws_url: wss://mainnet.helius-rpc.com/?api-key=sol_rpc_ws_url
+    rpc_http_url: https://mainnet.helius-rpc.com/?api-key=sol_rpc_http_url
+    wallet_a_address: CsjQ1AU3xLMRgSBzkM7AhA5nxbqubowTvrzvbrraXQcf
     wallets_b:
-    - 9qRcqMKRLhwfy7Yb3771DMMJ3vNynCLex8AaPoRYGMLy
-    - FBceZnXmWqDdMkmfbxiE8j6MqrahrW1TjkELxqDbX23W
-    - 5JuPf9rzuCpUyPSs1VbEQNWY4AHGC7L6LJFSGij657mv
-    - 6ZLkaZuak3vc2wnTqjM5MQ1CirC5P45tnns4tDzpn5VN
-    - HDE52KwzM187o9oSUCcJvw1X6cwhPVHZQtR3iorkzey8
+    - 47dS2ZUH3Rd5qCWYRj7MeNfXxiCwxXFrk3YXENash5HY
+    - Cvrdq5XYPBNuqXwUdpE1jnC83bgurxEwqhR6UYbraTU6
+    - 7R9zFyXjJnjbtFJhPvhxnympZjjNQWWCnqC3YZsRP3un
+    - FzoHbsrLoqs7CiTcgHFRy9kNDyRUehLinTvGVDWfytBv
+    - Fi8ixoLmWumEiUs5i1397t3N7oG9ZHcWkkcB1q5GbnjX
     fee_lamports_per_tx: 5000
     min_lamports_to_distribute: 1000000
     dust_limit_lamports: 5000

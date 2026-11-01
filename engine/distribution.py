@@ -10,7 +10,8 @@ PRECISION = Decimal("0.00000001")
 
 class DistributionEngine:
     def __init__(self, chain_name, config, ratios, retry_cfg, repo,
-                 signer: EVMSigner = None, gas_estimator: GasEstimator = None):
+                 signer: EVMSigner = None, gas_estimator: GasEstimator = None,
+                 dry_run: bool = True):
         self.chain_name = chain_name
         self.config = config
         self.ratios = [Decimal(str(r)) for r in ratios]
@@ -18,6 +19,7 @@ class DistributionEngine:
         self.repo = repo
         self.signer = signer
         self.gas_estimator = gas_estimator
+        self.dry_run = dry_run
         self.wallets_b = config.get("wallets_b", [])
         self.lock = asyncio.Lock()
         self._stop = asyncio.Event()
@@ -84,6 +86,12 @@ class DistributionEngine:
             for i, (dest, amt) in enumerate(allocations, start=1):
                 pct = (amt / montant_recu * 100).quantize(Decimal("0.01"))
                 print(f"[{self.chain_name}]   B{i} -> {dest[:10]}... : {amt} ETH ({pct}%)")
+
+            # 4.5) Check DRY_RUN
+            if self.dry_run:
+                print(f"[{self.chain_name}] DRY_RUN actif — aucun envoi reel")
+                await self.repo.complete_job(job_id, montant_recu)
+                return
 
             # 5) Envois sequentiels B1..B4 puis B5
             for i, (dest, amt) in enumerate(allocations, start=1):

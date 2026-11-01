@@ -5,6 +5,7 @@ from decimal import Decimal
 from solana.rpc.websocket_api import connect
 from solana.rpc.async_api import AsyncClient
 from solders.pubkey import Pubkey
+from solders.signature import Signature
 from solders.rpc.config import RpcTransactionLogsFilterMentions
 
 from watchers.base import ChainWatcher
@@ -13,17 +14,21 @@ from watchers.base import ChainWatcher
 class SolWatcher(ChainWatcher):
     """Surveille une adresse Solana via logsSubscribe."""
 
-    def __init__(self, rpc_ws_url: str, rpc_http_url: str, watched_address: str, on_incoming_cb):
+    def __init__(self, rpc_ws_url: str, rpc_http_url: str, watched_address: str, on_incoming_cb, repo=None):
         super().__init__("solana", rpc_ws_url, watched_address)
         self.rpc_ws_url = rpc_ws_url
         self.rpc_http_url = rpc_http_url
         self.on_incoming_cb = on_incoming_cb
         self._running = False
         self._seen_signatures = set()
+        self.repo = repo  # JobRepository pour eviter les doublons
 
     async def start(self):
         self._running = True
         retry_delay = 5
+
+        # Catch-up : rattraper les TX manquees avant l'ecoute live
+        await self._sync_history()
 
         while self._running:
             try:
@@ -55,6 +60,79 @@ class SolWatcher(ChainWatcher):
 
     async def stop(self):
         self._running = False
+
+    async def _sync_history(self):
+        """Rattrape les TX recentes non encore traitees (catch-up)."""
+        print(f"[SolWatcher] Sync historique pour {self.watched_address}...")
+        try:
+            async with AsyncClient(self.rpc_http_url) as client:
+                sigs = await client.get_signatures_for_address(
+                    Pubkey.from_string(self.watched_address),
+                    limit=3,
+                )
+                if not sigs.value:
+                    print("[SolWatcher] Aucune TX historique")
+                    return
+
+                print(f"[SolWatcher] {len(sigs.value)} TX historiques a verifier")
+
+                for s in sigs.value:
+                    sig_str = str(s.signature)
+                    if sig_str in self._seen_signatures:
+                        continue
+                    if s.err is not None:
+                        continue
+
+                    # Verifier si deja traitee en DB
+                    if self.repo is not None:
+                        try:
+                            if await self.repo.is_tx_processed("solana", sig_str):
+                                self._seen_signatures.add(sig_str)
+                                print(f"[SolWatcher] Sync TX deja traitee : {sig_str[:20]}...")
+                                continue
+                        except Exception as e:
+                            print(f"[SolWatcher] Erreur check DB : {e}")
+
+                    self._seen_signatures.add(sig_str)
+                    print(f"[SolWatcher] Sync TX : {sig_str[:20]}...")
+
+                    # Version SANS retry (rapide pour la sync)
+                    montant = await self._get_amount_fast(client, sig_str)
+                    if montant is None or montant == 0:
+                        continue
+
+                    print(f"[SolWatcher] Sync MONTANT RECU : {montant} SOL")
+                    await self.on_incoming_cb(montant, sig_str)
+        except Exception as e:
+            print(f"[SolWatcher] Erreur sync : {type(e).__name__} : {e}")
+
+    async def _get_amount_fast(self, client, sig_str):
+        """Version rapide de _get_received_amount, sans retry."""
+        try:
+            sig_obj = Signature.from_string(sig_str)
+            resp = await client.get_transaction(
+                sig_obj,
+                max_supported_transaction_version=0,
+                commitment="confirmed",
+            )
+            tx = resp.value
+            if tx is None:
+                return None
+            meta = tx.transaction.meta
+            if meta is None or meta.err is not None:
+                return None
+            keys = tx.transaction.transaction.message.account_keys
+            pre = meta.pre_balances
+            post = meta.post_balances
+            for i, k in enumerate(keys):
+                if str(k) == self.watched_address:
+                    diff = post[i] - pre[i]
+                    if diff > 0:
+                        return Decimal(diff) / Decimal(1_000_000_000)
+            return None
+        except Exception as e:
+            print(f"[SolWatcher] Erreur fast get_tx : {type(e).__name__} : {e}")
+            return None
 
     async def _handle_message(self, msg):
         """Parse une notification logsSubscribe.
@@ -104,36 +182,53 @@ class SolWatcher(ChainWatcher):
         except Exception as e:
             print(f"[SolWatcher] Erreur parsing : {e}")
 
-    async def _get_received_amount(self, signature: str) -> Decimal:
+    async def _get_received_amount(self, signature) -> Decimal:
         """Interroge RPC pour extraire le montant recu par le Wallet A."""
         try:
-            async with AsyncClient(self.rpc_http_url) as client:
-                resp = await client.get_transaction(
-                    signature,
-                    encoding="jsonParsed",
-                    max_supported_transaction_version=0,
-                )
-                tx = resp.value
-                if tx is None:
-                    return None
+            if isinstance(signature, str):
+                sig_obj = Signature.from_string(signature)
+            else:
+                sig_obj = signature
 
-                meta = tx.transaction.meta
-                if meta is None or meta.err is not None:
-                    return None
+            # Retry : le RPC public peut retourner null juste apres la TX
+            tx = None
+            for attempt in range(6):
+                async with AsyncClient(self.rpc_http_url) as client:
+                    try:
+                        resp = await client.get_transaction(
+                            sig_obj,
+                            max_supported_transaction_version=0,
+                            commitment="confirmed",
+                        )
+                        tx = resp.value
+                    except Exception as e:
+                        print(f"[SolWatcher] get_transaction error : {type(e).__name__} : {e}")
 
-                account_keys = tx.transaction.transaction.message.account_keys
-                pre_balances = meta.pre_balances
-                post_balances = meta.post_balances
+                if tx is not None:
+                    break
+                print(f"[SolWatcher] get_transaction null, retry {attempt+1}/6 dans 3s...")
+                await asyncio.sleep(3)
 
-                for i, key in enumerate(account_keys):
-                    addr = str(key.pubkey) if hasattr(key, "pubkey") else str(key)
-                    if addr == self.watched_address:
-                        diff = post_balances[i] - pre_balances[i]
-                        if diff > 0:
-                            return Decimal(diff) / Decimal(1_000_000_000)
+            if tx is None:
+                print("[SolWatcher] get_transaction : toujours null apres 6 retries")
                 return None
+
+            meta = tx.transaction.meta
+            if meta is None or meta.err is not None:
+                return None
+
+            keys = tx.transaction.transaction.message.account_keys
+            pre = meta.pre_balances
+            post = meta.post_balances
+
+            for i, k in enumerate(keys):
+                if str(k) == self.watched_address:
+                    diff = post[i] - pre[i]
+                    if diff > 0:
+                        return Decimal(diff) / Decimal(1_000_000_000)
+            return None
         except Exception as e:
-            print(f"[SolWatcher] Erreur get_transaction : {e}")
+            print(f"[SolWatcher] Erreur get_transaction : {type(e).__name__} : {e}")
             return None
 
     async def on_incoming(self, tx):

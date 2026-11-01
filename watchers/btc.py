@@ -31,6 +31,7 @@ class BtcWatcher(ChainWatcher):
         on_incoming: Callable[[Decimal, str], Awaitable[None]],
         poll_interval: int = 10,
         confirmations_required: int = 1,
+        repo=None,
     ):
         super().__init__(
             chain_id="bitcoin",
@@ -43,6 +44,7 @@ class BtcWatcher(ChainWatcher):
         self.confirmations_required = confirmations_required
 
         self._seen_txids: set[str] = set()
+        self.repo = repo
         self._running = False
         self._session: Optional[aiohttp.ClientSession] = None
 
@@ -92,19 +94,61 @@ class BtcWatcher(ChainWatcher):
             if resp.status == 404:
                 return None
             resp.raise_for_status()
-            return await resp.json()
+
+            # Blockstream renvoie du texte brut pour certains endpoints
+            # (ex: /blocks/tip/height retourne "870123" en text/plain)
+            ct = resp.headers.get("content-type", "").lower()
+            if "json" in ct:
+                return await resp.json()
+            else:
+                # Texte brut : essayer de convertir en int, sinon str
+                text = (await resp.text()).strip()
+                if not text:
+                    return None
+                try:
+                    return int(text)
+                except ValueError:
+                    return text
 
     async def _prime_seen_txids(self):
-        """Marque comme 'vues' toutes les TX deja confirmees de l'adresse."""
+        """Marque comme 'vues' UNIQUEMENT les TX deja traitees en DB.
+
+        Les TX non-traitees restent dans le flux et seront rattrapees
+        par _poll_once (catch-up automatique).
+        """
         txs = await self._get(f"/address/{self.watched_address}/txs")
         if not txs:
             print("[BTC-WATCH] Aucune TX existante sur cette adresse")
             return
+
+        deja_traitees = 0
+        non_traitees = 0
         for tx in txs:
-            self._seen_txids.add(tx["txid"])
+            txid = tx["txid"]
+
+            # Ignorer les TX ou wallet A est en INPUT (= sortie/change)
+            if self._is_outgoing(tx):
+                self._seen_txids.add(txid)
+                deja_traitees += 1
+                continue
+
+            if self.repo is not None:
+                try:
+                    if await self.repo.is_tx_processed("bitcoin", txid):
+                        self._seen_txids.add(txid)
+                        deja_traitees += 1
+                    else:
+                        non_traitees += 1
+                except Exception as e:
+                    print(f"[BTC-WATCH] Erreur check DB : {e}")
+                    self._seen_txids.add(txid)
+            else:
+                self._seen_txids.add(txid)
+                deja_traitees += 1
+
         print(
-            f"[BTC-WATCH] Historique initial : {len(self._seen_txids)} TX "
-            f"(ignorees au demarrage)"
+            f"[BTC-WATCH] Historique : {deja_traitees} TX deja traitees (ignorees), "
+            f"{non_traitees} TX a traiter (catch-up)"
         )
 
     async def _poll_once(self):
@@ -116,6 +160,21 @@ class BtcWatcher(ChainWatcher):
             txid = tx["txid"]
             if txid in self._seen_txids:
                 continue
+
+            # Ignorer les TX ou wallet A est en INPUT (= sortie/change)
+            if self._is_outgoing(tx):
+                self._seen_txids.add(txid)
+                print(f"[BTC-WATCH] Sortie/change ignoree : {txid[:20]}...")
+                continue
+
+            # Double securite : check DB
+            if self.repo is not None:
+                try:
+                    if await self.repo.is_tx_processed("bitcoin", txid):
+                        self._seen_txids.add(txid)
+                        continue
+                except Exception as e:
+                    print(f"[BTC-WATCH] Erreur check DB (poll) : {e}")
 
             status = tx.get("status", {})
             confirmed = status.get("confirmed", False)

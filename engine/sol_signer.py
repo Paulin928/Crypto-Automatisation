@@ -5,6 +5,7 @@ import json
 from decimal import Decimal
 
 from solana.rpc.async_api import AsyncClient
+from solana.rpc.async_api import TxOptsModel
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.system_program import transfer, TransferParams
@@ -53,7 +54,7 @@ class SolSigner:
     async def send_native(self, to_address: str, amount_lamports: int) -> str:
         """Envoie `amount_lamports` a `to_address`. Retourne la signature.
 
-        Utilise VersionedTransaction (methode moderne recommandee par Solana).
+        Avec retry et blockhash frais a chaque tentative.
         """
         from solders.message import MessageV0
         from solders.transaction import VersionedTransaction
@@ -61,29 +62,45 @@ class SolSigner:
         receiver = Pubkey.from_string(to_address)
         sender = self.keypair.pubkey()
 
-        async with AsyncClient(self.rpc_http_url) as client:
-            # Blockhash recent
-            blockhash_resp = await client.get_latest_blockhash()
-            blockhash = blockhash_resp.value.blockhash
+        last_error = None
+        for attempt in range(4):
+            try:
+                async with AsyncClient(self.rpc_http_url) as client:
+                    # Blockhash frais
+                    blockhash_resp = await client.get_latest_blockhash(commitment="confirmed")
+                    blockhash = blockhash_resp.value.blockhash
 
-            # Instruction de transfert
-            ix = transfer(TransferParams(
-                from_pubkey=sender,
-                to_pubkey=receiver,
-                lamports=amount_lamports,
-            ))
+                    # Instruction
+                    ix = transfer(TransferParams(
+                        from_pubkey=sender,
+                        to_pubkey=receiver,
+                        lamports=amount_lamports,
+                    ))
 
-            # Message V0 (format moderne)
-            msg = MessageV0.try_compile(
-                payer=sender,
-                instructions=[ix],
-                address_lookup_table_accounts=[],
-                recent_blockhash=blockhash,
-            )
+                    # Message V0
+                    msg = MessageV0.try_compile(
+                        payer=sender,
+                        instructions=[ix],
+                        address_lookup_table_accounts=[],
+                        recent_blockhash=blockhash,
+                    )
+                    tx = VersionedTransaction(msg, [self.keypair])
 
-            # VersionedTransaction signee
-            tx = VersionedTransaction(msg, [self.keypair])
+                    # Envoi
+                    resp = await client.send_transaction(tx, opts=TxOptsModel(skip_preflight=True, preflight_commitment="confirmed"))
+                    sig = str(resp.value)
 
-            # Envoi
-            resp = await client.send_transaction(tx)
-            return str(resp.value)
+                    if sig and sig != "1111111111111111111111111111111111111111111111111111111111111111":
+                        return sig
+
+                    last_error = f"signature nulle/invalide : {sig}"
+                    print(f"[SolSigner] Attempt {attempt+1} : {last_error}")
+
+            except Exception as e:
+                last_error = f"{type(e).__name__} : {str(e)[:200]}"
+                print(f"[SolSigner] Attempt {attempt+1} erreur : {last_error}")
+
+            await asyncio.sleep(2)
+
+        raise RuntimeError(f"send_native echoue apres 4 tentatives : {last_error}")
+

@@ -57,3 +57,26 @@ class JobRepository:
                 (str(reste_final), job_id),
             )
             await db.commit()
+
+    # ------------------------------------------------------------------ #
+    # Catch-up : verification des TX deja traitees
+    # ------------------------------------------------------------------ #
+    async def get_processed_tx_hashes(self, chain: str) -> set:
+        """Retourne tous les tx_hash deja traites (status COMPLETED)."""
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "SELECT tx_hash FROM jobs WHERE chain=? AND status='COMPLETED'",
+                (chain,),
+            )
+            rows = await cur.fetchall()
+            return {r[0] for r in rows}
+
+    async def is_tx_processed(self, chain: str, tx_hash: str) -> bool:
+        """Verifie si une TX a deja ete traitee (status COMPLETED)."""
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "SELECT 1 FROM jobs WHERE chain=? AND tx_hash=? AND status='COMPLETED'",
+                (chain, tx_hash),
+            )
+            row = await cur.fetchone()
+            return row is not None
